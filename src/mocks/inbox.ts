@@ -1,0 +1,58 @@
+import type { InboxItem } from "../types";
+
+export const inboxItems: InboxItem[] = [
+  {
+    id: "i1",
+    group: "approval",
+    title: "Нужно подтвердить привязку 5 задач к эпикам",
+    source: "Task Agent",
+    priority: "high",
+    summary: "Агент готов сохранить Epic Link для GAMES-1234 … 1239",
+    related: "GAMES board",
+  },
+  {
+    id: "i2",
+    group: "messages",
+    title: "Найдено 3 новых упоминания в Telegram",
+    source: "Telegram Agent",
+    priority: "med",
+    summary: "Иван П., Мария К. и канал Releases упомянули вас",
+    related: "Telegram",
+  },
+  {
+    id: "i3",
+    group: "tasks",
+    title: "Новые задачи на команду GAMES",
+    source: "Task Agent",
+    priority: "med",
+    summary: "8 задач в To Do, 3 без эпика",
+    related: "GAMES board",
+  },
+  {
+    id: "i4",
+    group: "meetings",
+    title: "Завтра встреча по ПСИ, нет повестки",
+    source: "Calendar Agent",
+    priority: "high",
+    summary: "Можно сгенерировать повестку из памяти",
+    related: "ПСИ 28.04",
+  },
+  {
+    id: "i5",
+    group: "errors",
+    title: "Агент не смог распознать форму в VDI",
+    source: "Vision",
+    priority: "low",
+    summary: "Confidence 0.42 при чтении правой панели задачи",
+    related: "GAMES-1239",
+  },
+  {
+    id: "i6",
+    group: "reminders",
+    title: "Напоминание: проверить релизный чек-лист",
+    source: "Reminder",
+    priority: "low",
+    summary: "Релиз 1.4 — 30 апреля",
+    related: "Release 1.4",
+  },
+];
