@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { settingsApi, type AppSettingsDto } from "../api/settingsApi";
 import { Badge } from "../components/common/Badge";
 import { Button } from "../components/common/Button";
 import { Card } from "../components/common/Card";
@@ -39,6 +40,9 @@ interface SettingsState {
   vdiFps: number;
   vdiCursorSync: boolean;
   // obs
+  frameProvider: "mock" | "obs" | "file";
+  obsWsUrl: string;
+  obsWsPassword: string;
   obsSource: string;
   obsFps: number;
   obsBitrate: number;
@@ -46,6 +50,7 @@ interface SettingsState {
   // esp32
   esp32Host: string;
   esp32Port: number;
+  hidBridge: "mock" | "esp32_http" | "esp32_ws";
   esp32MoveProfile: "linear" | "human" | "fast";
   esp32MoveDelay: number;
   // agents
@@ -86,12 +91,16 @@ const defaultState: SettingsState = {
   vdiResolution: "1920x1080",
   vdiFps: 15,
   vdiCursorSync: true,
-  obsSource: "OBS Virtual Camera",
+  frameProvider: "mock",
+  obsWsUrl: "ws://localhost:4455",
+  obsWsPassword: "",
+  obsSource: "VDI Capture",
   obsFps: 15,
   obsBitrate: 4000,
   obsBuffer: 1.2,
-  esp32Host: "192.168.1.42",
+  esp32Host: "http://192.168.31.234",
   esp32Port: 8080,
+  hidBridge: "mock",
   esp32MoveProfile: "human",
   esp32MoveDelay: 80,
   agentsEnabled: {
@@ -127,14 +136,123 @@ const defaultState: SettingsState = {
   accent: "cyan",
 };
 
+function parseEsp32BaseUrl(value: string): { host: string; port: number } {
+  try {
+    const url = new URL(value.includes("://") ? value : `http://${value}`);
+    const defaultPort = url.protocol === "https:" ? 443 : 80;
+    const port = url.port ? Number(url.port) : defaultPort;
+    url.port = "";
+    return { host: url.toString().replace(/\/$/, ""), port };
+  } catch {
+    return { host: value, port: 80 };
+  }
+}
+
+function buildEsp32BaseUrl(host: string, port: number): string {
+  try {
+    const url = new URL(host.includes("://") ? host : `http://${host}`);
+    const defaultPort = url.protocol === "https:" ? 443 : 80;
+    url.port = port && port !== defaultPort ? String(port) : "";
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    const cleanHost = host.replace(/\/$/, "");
+    return port ? `${cleanHost}:${port}` : cleanHost;
+  }
+}
+
+function stateFromSettings(settings: AppSettingsDto): SettingsState {
+  const esp32 = parseEsp32BaseUrl(settings.esp32BaseUrl);
+  return {
+    ...defaultState,
+    vdiResolution: `${settings.vdiWidth}x${settings.vdiHeight}`,
+    vdiFps: Math.round(1000 / Math.max(settings.frameRefreshIntervalMs, 1)),
+    frameProvider: settings.frameProvider === "obs" || settings.frameProvider === "file" ? settings.frameProvider : "mock",
+    obsWsUrl: settings.obsWsUrl,
+    obsWsPassword: settings.obsWsPassword,
+    obsSource: settings.obsSourceName,
+    esp32Host: esp32.host,
+    esp32Port: esp32.port,
+    hidBridge: settings.hidBridge === "esp32_http" || settings.hidBridge === "esp32_ws" ? settings.hidBridge : "mock",
+    esp32MoveDelay: settings.afterActionRefreshDelayMs,
+  };
+}
+
+function settingsFromState(state: SettingsState) {
+  const [width, height] = state.vdiResolution.split("x").map(Number);
+  return {
+    frameProvider: state.frameProvider,
+    obsWsUrl: state.obsWsUrl,
+    obsWsPassword: state.obsWsPassword,
+    obsSourceName: state.obsSource,
+    esp32BaseUrl: buildEsp32BaseUrl(state.esp32Host, state.esp32Port),
+    hidBridge: state.hidBridge,
+    vdiWidth: width || 1920,
+    vdiHeight: height || 1080,
+    frameRefreshIntervalMs: Math.round(1000 / Math.max(state.vdiFps, 1)),
+    afterActionRefreshDelayMs: state.esp32MoveDelay,
+  };
+}
+
 export function SettingsScreen() {
   const [section, setSection] = useState<Section>("general");
   const [state, setState] = useState<SettingsState>(defaultState);
   const [dirty, setDirty] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const settings = await settingsApi.get();
+        if (!cancelled) {
+          setState(stateFromSettings(settings));
+          setDirty(false);
+          setError(null);
+        }
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function update<K extends keyof SettingsState>(key: K, value: SettingsState[K]) {
     setState((s) => ({ ...s, [key]: value }));
     setDirty(true);
+  }
+
+  async function reloadSettings() {
+    setLoading(true);
+    try {
+      const settings = await settingsApi.get();
+      setState(stateFromSettings(settings));
+      setDirty(false);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function saveSettings() {
+    setSaving(true);
+    try {
+      const settings = await settingsApi.update(settingsFromState(state));
+      setState(stateFromSettings(settings));
+      setDirty(false);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -168,27 +286,32 @@ export function SettingsScreen() {
             Settings · {sections.find((s) => s.key === section)?.label}
           </h1>
           <div className="flex items-center gap-2">
+            {loading && <Badge tone="info">Загрузка…</Badge>}
+            {error && <Badge tone="danger">Ошибка сохранения</Badge>}
             {dirty && <Badge tone="warn">Несохранённые изменения</Badge>}
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => {
-                setState(defaultState);
-                setDirty(false);
-              }}
+              onClick={reloadSettings}
             >
               Сбросить
             </Button>
             <Button
               variant="primary"
               size="sm"
-              disabled={!dirty}
-              onClick={() => setDirty(false)}
+              disabled={!dirty || saving}
+              onClick={saveSettings}
             >
-              Сохранить
+              {saving ? "Сохранение…" : "Сохранить"}
             </Button>
           </div>
         </div>
+
+        {error && (
+          <Card>
+            <div className="text-sm text-red-600">{error}</div>
+          </Card>
+        )}
 
         {section === "general" && (
           <Card>
@@ -243,11 +366,27 @@ export function SettingsScreen() {
         {section === "obs" && (
           <Card>
             <SectionTitle>OBS / Захват</SectionTitle>
-            <Row label="Источник">
+            <Row label="Провайдер кадров">
               <Select
+                value={state.frameProvider}
+                onChange={(v) => update("frameProvider", v as "mock" | "obs" | "file")}
+                options={["mock", "obs", "file"]}
+              />
+            </Row>
+            <Row label="OBS WebSocket URL">
+              <TextInput value={state.obsWsUrl} onChange={(v) => update("obsWsUrl", v)} />
+            </Row>
+            <Row label="OBS WebSocket пароль">
+              <TextInput
+                value={state.obsWsPassword}
+                onChange={(v) => update("obsWsPassword", v)}
+                type="password"
+              />
+            </Row>
+            <Row label="Источник">
+              <TextInput
                 value={state.obsSource}
                 onChange={(v) => update("obsSource", v)}
-                options={["OBS Virtual Camera", "NDI", "RTSP", "Прямой захват"]}
               />
             </Row>
             <Row label="FPS">
@@ -281,7 +420,14 @@ export function SettingsScreen() {
         {section === "esp32" && (
           <Card>
             <SectionTitle>ESP32 / HID-эмуляция</SectionTitle>
-            <Row label="Хост">
+            <Row label="HID bridge">
+              <Select
+                value={state.hidBridge}
+                onChange={(v) => update("hidBridge", v as "mock" | "esp32_http" | "esp32_ws")}
+                options={["mock", "esp32_http", "esp32_ws"]}
+              />
+            </Row>
+            <Row label="Base URL">
               <TextInput value={state.esp32Host} onChange={(v) => update("esp32Host", v)} />
             </Row>
             <Row label="Порт">

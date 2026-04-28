@@ -94,6 +94,8 @@ export function App() {
   const [activeScreen, setActiveScreen] = useState<ScreenKey>("vdi");
   const [mode, setMode] = useState<Mode>("Live Control");
   const [agentsPaused, setAgentsPaused] = useState(false);
+  const [emergencyStop, setEmergencyStop] = useState(false);
+  const [esp32Connected, setEsp32Connected] = useState(true);
   const [rightTab, setRightTab] = useState<RightTab>("agent");
   const rightPanel = useRightPanel(activeScreen);
 
@@ -139,6 +141,8 @@ export function App() {
 
         setMode(modeFromBackend(status.currentMode));
         setAgentsPaused(status.agentsPaused);
+        setEmergencyStop(Boolean(status.emergencyStop));
+        setEsp32Connected(status.esp32?.status === "connected" || status.esp32?.status === "mock_connected");
 
         setHistory(historyDtos.map(historyFromBackend));
         setMessages(messageDtos.map(messageFromBackend));
@@ -166,6 +170,20 @@ export function App() {
         console.error("initial load failed", err);
       }
     })();
+  }, []);
+
+  useEffect(() => {
+    const refreshRuntimeStatus = async () => {
+      try {
+        const status = await statusApi.get();
+        setEmergencyStop(Boolean(status.emergencyStop));
+        setEsp32Connected(status.esp32?.status === "connected" || status.esp32?.status === "mock_connected");
+      } catch {
+        setEsp32Connected(false);
+      }
+    };
+    const id = window.setInterval(refreshRuntimeStatus, 5000);
+    return () => window.clearInterval(id);
   }, []);
 
   // ---- WebSocket ----
@@ -207,6 +225,13 @@ export function App() {
           if (m) setMode(modeFromBackend(m as never));
           if (typeof payload.agentsPaused === "boolean") {
             setAgentsPaused(payload.agentsPaused as boolean);
+          }
+          if (typeof payload.emergencyStop === "boolean") {
+            setEmergencyStop(payload.emergencyStop as boolean);
+          }
+          const esp = (payload.esp32 as { status?: string } | undefined)?.status;
+          if (esp) {
+            setEsp32Connected(esp === "connected" || esp === "mock_connected");
           }
           break;
         }
@@ -521,24 +546,11 @@ export function App() {
               mode={mode}
               overlays={overlays}
               onOverlaysChange={setOverlays}
-              lastClick={lastClick}
-              selectedZone={selectedZone}
               vdiFocused={vdiFocused}
               onVdiFocus={() => setVdiFocused(true)}
               onVdiBlur={() => setVdiFocused(false)}
-              onClick={handleVdiClick}
-              onZoneSelected={(z) => {
-                setSelectedZone(z);
-                pushHistoryLocal({
-                  actor: "user",
-                  type: "VDI Zone",
-                  summary: `Выделена зона ${z.w}×${z.h}`,
-                });
-              }}
-              onScroll={() => {
-                /* noop */
-              }}
-              onVdiKey={handleVdiKey}
+              emergencyStop={emergencyStop}
+              esp32Connected={esp32Connected}
             />
           )}
           {activeScreen === "inbox" && <InboxScreen />}

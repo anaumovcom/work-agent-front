@@ -66,6 +66,13 @@ export function DiagnosticsScreen() {
         <Button
           size="sm"
           disabled={busy !== null}
+          onClick={() => runTest("esp32move", diagnosticsApi.testEsp32Move)}
+        >
+          {busy === "esp32move" ? "…" : "Test ESP32 move"}
+        </Button>
+        <Button
+          size="sm"
+          disabled={busy !== null}
           onClick={() => runTest("ocr", diagnosticsApi.testOcr)}
         >
           {busy === "ocr" ? "…" : "Test OCR"}

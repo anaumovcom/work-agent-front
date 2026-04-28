@@ -1,6 +1,6 @@
 import clsx from "clsx";
 
-interface Overlays {
+export interface Overlays {
   ocr: boolean;
   ui: boolean;
   zones: boolean;

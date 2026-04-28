@@ -16,6 +16,7 @@ export interface SystemStatusDto {
   memory: { status: string };
   currentMode: SystemMode;
   agentsPaused: boolean;
+  emergencyStop: boolean;
 }
 
 export const statusApi = {
@@ -25,4 +26,6 @@ export const statusApi = {
   pauseAgents: (paused: boolean) =>
     api.post<SystemStatusDto>("/api/status/pause-agents", { paused }),
   emergencyStop: () => api.post<SystemStatusDto>("/api/status/emergency-stop"),
+  resetEmergencyStop: () =>
+    api.post<SystemStatusDto>("/api/status/reset-emergency-stop"),
 };
